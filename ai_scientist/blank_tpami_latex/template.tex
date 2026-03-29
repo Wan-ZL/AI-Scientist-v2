@@ -1,0 +1,151 @@
+%%%%%%%% IEEE TPAMI SURVEY LATEX TEMPLATE %%%%%%%%%%%%%%%%%
+
+\documentclass[journal]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage[capitalize,noabbrev]{cleveref}
+
+\graphicspath{{../figures/}} % To reference your generated figures, name the PNGs directly. DO NOT CHANGE THIS.
+
+\begin{filecontents}{references.bib}
+@article{lecun2015deep,
+  title={Deep learning},
+  author={LeCun, Yann and Bengio, Yoshua and Hinton, Geoffrey},
+  journal={Nature},
+  volume={521},
+  number={7553},
+  pages={436--444},
+  year={2015},
+  publisher={Nature Publishing Group}
+}
+\end{filecontents}
+
+\title{Computer Vision for Construction Drawing Understanding: A Comprehensive Survey}
+
+\author{Zelin~Wan
+\thanks{Z. Wan is with Bobyard Inc., San Francisco, CA, USA.}
+}
+
+\begin{document}
+
+\maketitle
+
+%%%%%%%%%ABSTRACT%%%%%%%%%
+\begin{abstract}
+ABSTRACT HERE
+\end{abstract}
+%%%%%%%%%ABSTRACT%%%%%%%%%
+
+\begin{IEEEkeywords}
+construction drawings, technical drawing understanding, computer vision, deep learning, survey
+\end{IEEEkeywords}
+
+%%%%%%%%%INTRODUCTION%%%%%%%%%
+\section{Introduction}
+\label{sec:introduction}
+% CONTENT HERE
+%%%%%%%%%INTRODUCTION%%%%%%%%%
+
+%%%%%%%%%BACKGROUND%%%%%%%%%
+\section{Background and Taxonomy}
+\label{sec:background}
+% CONTENT HERE
+%%%%%%%%%BACKGROUND%%%%%%%%%
+
+%%%%%%%%%STATISTICAL_OVERVIEW%%%%%%%%%
+\section{Statistical Overview of the Field}
+\label{sec:statistical_overview}
+% CONTENT HERE
+
+% EXAMPLE FIGURE: REPLACE AND ADD YOUR OWN FIGURES / CAPTIONS
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{example-image-a}
+\caption{PLEASE FILL IN CAPTION HERE}
+\label{fig:statistical_overview}
+\end{figure}
+%%%%%%%%%STATISTICAL_OVERVIEW%%%%%%%%%
+
+%%%%%%%%%SYMBOL_DETECTION%%%%%%%%%
+\section{Symbol Detection and Recognition}
+\label{sec:symbol_detection}
+% CONTENT HERE
+%%%%%%%%%SYMBOL_DETECTION%%%%%%%%%
+
+%%%%%%%%%LAYOUT_ANALYSIS%%%%%%%%%
+\section{Layout Analysis and Segmentation}
+\label{sec:layout_analysis}
+% CONTENT HERE
+%%%%%%%%%LAYOUT_ANALYSIS%%%%%%%%%
+
+%%%%%%%%%TEXT_RECOGNITION%%%%%%%%%
+\section{Text Detection and Recognition in Drawings}
+\label{sec:text_recognition}
+% CONTENT HERE
+%%%%%%%%%TEXT_RECOGNITION%%%%%%%%%
+
+%%%%%%%%%TOPOLOGY%%%%%%%%%
+\section{Topology and Graph Extraction}
+\label{sec:topology}
+% CONTENT HERE
+%%%%%%%%%TOPOLOGY%%%%%%%%%
+
+%%%%%%%%%FLOOR_PLANS%%%%%%%%%
+\section{Architectural Floor Plans}
+\label{sec:floor_plans}
+% CONTENT HERE
+%%%%%%%%%FLOOR_PLANS%%%%%%%%%
+
+%%%%%%%%%ENGINEERING_DIAGRAMS%%%%%%%%%
+\section{P\&ID and Engineering Diagram Analysis}
+\label{sec:engineering_diagrams}
+% CONTENT HERE
+%%%%%%%%%ENGINEERING_DIAGRAMS%%%%%%%%%
+
+%%%%%%%%%FOUNDATION_MODELS%%%%%%%%%
+\section{Foundation Model Adaptation for Drawings}
+\label{sec:foundation_models}
+% CONTENT HERE
+%%%%%%%%%FOUNDATION_MODELS%%%%%%%%%
+
+%%%%%%%%%VLM%%%%%%%%%
+\section{Vision-Language Models for Construction Documents}
+\label{sec:vlm}
+% CONTENT HERE
+%%%%%%%%%VLM%%%%%%%%%
+
+%%%%%%%%%HIGH_RESOLUTION%%%%%%%%%
+\section{High-Resolution and Multi-Scale Processing}
+\label{sec:high_resolution}
+% CONTENT HERE
+%%%%%%%%%HIGH_RESOLUTION%%%%%%%%%
+
+%%%%%%%%%DATASETS%%%%%%%%%
+\section{Datasets and Benchmarks}
+\label{sec:datasets}
+% CONTENT HERE
+%%%%%%%%%DATASETS%%%%%%%%%
+
+%%%%%%%%%CHALLENGES%%%%%%%%%
+\section{Open Challenges and Future Directions}
+\label{sec:challenges}
+% CONTENT HERE
+%%%%%%%%%CHALLENGES%%%%%%%%%
+
+%%%%%%%%%CONCLUSION%%%%%%%%%
+\section{Conclusion}
+\label{sec:conclusion}
+% CONTENT HERE
+%%%%%%%%%CONCLUSION%%%%%%%%%
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

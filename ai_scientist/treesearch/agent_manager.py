@@ -148,22 +148,21 @@ class AgentManager:
         }
         self.main_stage_goals: Dict[int, str] = {
             1: """
-                - Focus on getting basic working implementation
-                - Use a simple dataset
-                - Aim for basic functional correctness
+                - Implement the initial approach as described in the task. Focus on getting a working solution first.
+                - Use a simple data source or setup to validate basic functional correctness.
                 - If you are given \"Code To Use\", you can directly use it as a starting point.""",
             2: """
-                - Change hyperparameters such as learning rate, number of epochs, batch size, etc. to improve the performance
-                - DO NOT change the model architecture from the previous stage
-                - Introduce TWO more new datasets from HuggingFace test the model. Try very hard to think what Huggingface datasets can be used here for testing.""",
+                - Tune parameters and settings to improve performance over the initial implementation.
+                - DO NOT change the core approach from the previous stage.
+                - Introduce TWO more data sources to test the approach. Think carefully about what additional data sources or benchmarks are relevant for thorough evaluation.""",
             3: """
-                - Explore novel improvements
-                - Come up with experiments to reveal new insights
-                - Be creative and think outside the box
-                - MAKE SURE you use THREE HuggingFace dataset in total to test your models""",
+                - Explore novel improvements and creative extensions beyond the basic approach.
+                - Come up with experiments to reveal new insights.
+                - Be creative and think outside the box.
+                - MAKE SURE you use at least THREE data sources or analysis dimensions in total to validate your approach.""",
             4: """
-                - Conduct systematic component analysis that reveals the contribution of each part
-                - Use the same datasets you used from the previous stage""",
+                - Conduct systematic ablation studies or sensitivity analysis that reveals the contribution of each component.
+                - Use the same data sources you used from the previous stage.""",
         }
         # Create initial stage
         self._create_initial_stage()
@@ -177,7 +176,7 @@ class AgentManager:
         )
 
     def _get_task_desc_str(self):
-        task_desc = """You are an ambitious AI researcher who is looking to publish a paper that will contribute significantly to the field.
+        task_desc = """You are an ambitious researcher who is looking to publish a paper that will contribute significantly to the field.
 You have an idea and you want to conduct creative experiments to gain scientific insights.
 Your aim is to run experiments to gather sufficient results for a top conference paper.
 Your research idea:\n\n
@@ -454,7 +453,7 @@ Your research idea:\n\n
             # Normal stage 2 completion check
             vlm_feedback = self._parse_vlm_feedback(best_node)
             eval_prompt = f"""
-            Evaluate if stage 2 (baseline tuning) is complete based on the following evidence:
+            Evaluate if stage 2 (parameter tuning) is complete based on the following evidence:
 
             1. Figure Analysis:
             {vlm_feedback}
@@ -462,8 +461,8 @@ Your research idea:\n\n
             2. Datasets Tested: {best_node.datasets_successfully_tested}
 
             Requirements for completion:
-            1. Training curves should show stable convergence
-            2. Results should be tested on at least two datasets
+            1. Performance metrics should show stability across runs
+            2. Results should be tested on at least two data sources
             3. No major instabilities or issues in the plots
 
             Provide a detailed evaluation of completion status.
@@ -519,8 +518,8 @@ Your research idea:\n\n
                         f"Implementation works but runs too quickly ({exec_time_minutes:.2f} minutes)."
                         "We have up to 60 minutes available for each experiment."
                         "Make sure to scale up the experiment "
-                        "by increasing the number of epochs, using a larger model, or working with bigger datasets."
-                        "Given that the current execution time is {exec_time_minutes:.2f} minutes, think about how changing the number of epochs to run, or using a larger model, or working with bigger datasets to run"
+                        "by increasing the scope, using more data sources, or performing more thorough analysis."
+                        "Given that the current execution time is {exec_time_minutes:.2f} minutes, think about how expanding the scope, adding more data, or deepening the analysis"
                         "will affect the execution time, and make sure to scale up the experiment accordingly."
                     )
                     print(f"[cyan]exec_time_feedback: {exec_time_feedback}[/cyan]")

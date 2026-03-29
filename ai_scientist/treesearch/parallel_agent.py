@@ -285,32 +285,34 @@ class MinimalAgent:
             "bayesian-optimization",
             "timm",
             "albumentations",
+            "requests",
+            "beautifulsoup4",
+            "networkx",
+            "seaborn",
+            "tqdm",
         ]
         random.shuffle(pkgs)
         pkg_str = ", ".join([f"`{p}`" for p in pkgs])
 
         env_prompt = {
-            "Installed Packages": f"Your solution can use any relevant machine learning packages such as: {pkg_str}. Feel free to use any other packages too (all packages are already installed!). For neural networks we suggest using PyTorch rather than TensorFlow."
+            "Installed Packages": f"Your solution can use any relevant packages such as: {pkg_str}. Feel free to use any other packages too (all packages are already installed!). For neural networks we suggest using PyTorch rather than TensorFlow."
         }
         return env_prompt
 
     @property
     def _prompt_impl_guideline(self):
         impl_guideline = [
-            "CRITICAL GPU REQUIREMENTS - Your code MUST include ALL of these:",
-            "  - At the start of your code, add these lines to handle GPU/CPU:",
+            "HARDWARE ACCELERATION - Use appropriate hardware acceleration if available:",
+            "  - If using PyTorch, set up device handling at the start of your code:",
             "    ```python",
             "    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')",
             "    print(f'Using device: {device}')",
             "    ```",
-            "  - ALWAYS move models to device using the `.to(device)` method",
-            "  - ALWAYS move input tensors to device using the `.to(device)` method",
-            "  - ALWAYS move model related tensors to device using the `.to(device)` method",
+            "  - Move models and tensors to the appropriate device",
             "  - For optimizers, create them AFTER moving model to device",
-            "  - When using DataLoader, move batch tensors to device in training loop: `batch = {k: v.to(device) for k, v in batch.items() if isinstance(v, torch.Tensor)}`",
-            "CRITICAL MODEL INPUT GUIDELINES:",
-            "  - Always pay extra attention to the input to the model being properly normalized",
-            "  - This is extremely important because the input to the model's forward pass directly affects the output, and the loss function is computed based on the output",
+            "DATA INPUT GUIDELINES:",
+            "  - Load data from appropriate sources (APIs, datasets, files, or generate synthetic data as needed)",
+            "  - Always pay extra attention to data preprocessing and normalization where applicable",
         ]
         if hasattr(self.cfg.experiment, "num_syn_datasets"):
             num_syn_datasets = self.cfg.experiment.num_syn_datasets
@@ -345,40 +347,33 @@ class MinimalAgent:
                 f"Be aware of the running time of the code, it should complete within {humanize.naturaldelta(self.cfg.exec.timeout)}.",
                 'You can also use the "./working" directory to store any temporary files that your code needs to create.',
                 "Data saving requirements:",
-                "- Save all plottable data (metrics, losses, predictions, etc.) as numpy arrays using np.save()",
+                "- Save all plottable data (metrics, results, predictions, etc.) as numpy arrays using np.save()",
                 "- Use the following naming convention for saved files:",
                 "  ```python",
                 "  # At the start of your code",
                 "  experiment_data = {",
-                "      'dataset_name_1': {",
-                "          'metrics': {'train': [], 'val': []},",
-                "          'losses': {'train': [], 'val': []},",
+                "      'dataset_or_experiment_name_1': {",
+                "          'metrics': {},    # key-value pairs of metric lists",
+                "          'results': [],    # main results or outputs",
                 "          'predictions': [],",
                 "          'ground_truth': [],",
-                "          # Add other relevant data",
+                "          # Add other relevant data for your task",
                 "      },",
-                "      # Add additional datasets as needed:",
-                "      'dataset_name_2': {",
-                "          'metrics': {'train': [], 'val': []},",
-                "          'losses': {'train': [], 'val': []},",
-                "          'predictions': [],",
-                "          'ground_truth': [],",
-                "          # Add other relevant data",
-                "      },",
+                "      # Add additional datasets or experiments as needed",
                 "  }",
-                "  # During training/evaluation:",
-                "  experiment_data['dataset_name_1']['metrics']['train'].append(train_metric)",
+                "  # During execution:",
+                "  experiment_data['dataset_or_experiment_name_1']['metrics']['metric_name'].append(value)",
                 "  ```",
-                "- Include timestamps or epochs with the saved metrics",
+                "- Include timestamps, steps, or epochs with the saved metrics where applicable",
                 "- For large datasets, consider saving in chunks or using np.savez_compressed()",
                 "CRITICAL EVALUATION REQUIREMENTS - Your code MUST include ALL of these:",
-                "  1. Track and print validation loss at each epoch or at suitable intervals:",
+                "  1. Print key evaluation metrics in the format: metric_name = value, at suitable intervals:",
                 "     ```python",
-                "     print(f'Epoch {{epoch}}: validation_loss = {{val_loss:.4f}}')",
+                "     print(f'Step {{step}}: metric_name = {{metric_value:.4f}}')",
                 "     ```",
                 "  2. Track and update ALL these additional metrics: "
                 + str(self.evaluation_metrics),
-                "  3. Update metrics at EACH epoch:",
+                "  3. Update metrics at each step or epoch as appropriate:",
                 "  4. Save ALL metrics at the end:",
                 "     ```python",
                 "     np.save(os.path.join(working_dir, 'experiment_data.npy'), experiment_data)",
@@ -454,8 +449,8 @@ class MinimalAgent:
         prompt: Any = {
             "Introduction": (
                 "You are an AI researcher who is looking to publish a paper that will contribute significantly to the field."
-                "Your first task is to write a python code to implement a solid baseline based on your research idea provided below, "
-                "from data preparation to model training, as well as evaluation and visualization. "
+                "Your first task is to write a python code to implement an initial solution based on your research idea provided below, "
+                "from data preparation to analysis, as well as evaluation and visualization. "
                 "Focus on getting a simple but working implementation first, before any sophisticated improvements. "
                 "We will explore more advanced variations in later stages."
             ),
@@ -732,9 +727,9 @@ class MinimalAgent:
             "  import numpy as np",
             "  import os",
             "  working_dir = os.path.join(os.getcwd(), 'working')",
-            "Create standard visualizations of experiment results",
+            "Create standard visualizations of results and metrics",
             "Save all plots to working_dir",
-            "Include training/validation curves if available",
+            "Include relevant performance curves or result visualizations if available",
             "ONLY plot data that exists in experiment_data.npy - DO NOT make up or simulate any values",
             "Use basic matplotlib without custom styles",
             "Each plot should be in a separate try-except block",
@@ -917,7 +912,7 @@ class MinimalAgent:
             prompt_select_plots = {
                 "Introduction": (
                     "You are an experienced AI researcher analyzing experimental results. "
-                    "You have been provided with plots from a machine learning experiment. "
+                    "You have been provided with plots from a research experiment or analysis. "
                     "Please select 10 most relevant plots to analyze. "
                     "For similar plots (e.g. generated samples at each epoch), select only at most 5 plots at a suitable interval of epochs."
                     "Format your response as a list of plot paths, where each plot path includes the full path to the plot file."
@@ -985,7 +980,7 @@ class MinimalAgent:
                 "type": "text",
                 "text": (
                     "You are an experienced AI researcher analyzing experimental results. "
-                    "You have been provided with plots from a machine learning experiment. "
+                    "You have been provided with plots from a research experiment or analysis. "
                     f"This experiment is based on the following research idea: {self.task_desc}"
                     "Please analyze these plots and provide detailed insights about the results. "
                     "If you don't receive any plots, say 'No plots received'. "
@@ -2245,9 +2240,9 @@ class ParallelAgent:
             "  import numpy as np",
             "  import os",
             "  working_dir = os.path.join(os.getcwd(), 'working')",
-            "Create standard visualizations of experiment results",
+            "Create standard visualizations of results and metrics",
             "Save all plots to working_dir",
-            "Include training/validation curves if available",
+            "Include relevant performance curves or result visualizations if available",
             "ONLY plot data that exists in experiment_data.npy - DO NOT make up or simulate any values",
             "Use basic matplotlib without custom styles",
             "Each plot should be in a separate try-except block",

@@ -23,6 +23,7 @@ from ai_scientist.perform_icbinb_writeup import (
     perform_writeup as perform_icbinb_writeup,
     gather_citations,
 )
+from ai_scientist.perform_survey_writeup import perform_survey_writeup
 from ai_scientist.perform_llm_review import perform_review, load_paper
 from ai_scientist.perform_vlm_review import perform_imgs_cap_ref_review
 from ai_scientist.utils.token_tracker import token_tracker
@@ -45,7 +46,7 @@ def parse_arguments():
         "--writeup-type",
         type=str,
         default="icbinb",
-        choices=["normal", "icbinb"],
+        choices=["normal", "icbinb", "survey"],
         help="Type of writeup to generate (normal=8 page, icbinb=4 page)",
     )
     parser.add_argument(
@@ -284,6 +285,12 @@ if __name__ == "__main__":
                     big_model=args.model_writeup,
                     page_limit=8,
                     citations_text=citations_text,
+                )
+            elif args.writeup_type == "survey":
+                writeup_success = perform_survey_writeup(
+                    base_folder=idea_dir,
+                    big_model=args.model_writeup,
+                    small_model=args.model_writeup_small,
                 )
             else:
                 writeup_success = perform_icbinb_writeup(
