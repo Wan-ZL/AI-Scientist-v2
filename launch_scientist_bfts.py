@@ -23,6 +23,7 @@ from ai_scientist.perform_icbinb_writeup import (
     perform_writeup as perform_icbinb_writeup,
     gather_citations,
 )
+from ai_scientist.perform_survey_writeup import perform_survey_writeup
 from ai_scientist.perform_llm_review import perform_review, load_paper
 from ai_scientist.perform_vlm_review import perform_imgs_cap_ref_review
 from ai_scientist.utils.token_tracker import token_tracker
@@ -45,7 +46,7 @@ def parse_arguments():
         "--writeup-type",
         type=str,
         default="icbinb",
-        choices=["normal", "icbinb"],
+        choices=["normal", "icbinb", "survey"],
         help="Type of writeup to generate (normal=8 page, icbinb=4 page)",
     )
     parser.add_argument(
@@ -85,19 +86,19 @@ def parse_arguments():
     parser.add_argument(
         "--model_agg_plots",
         type=str,
-        default="o3-mini-2025-01-31",
+        default="gpt-5.4",
         help="Model to use for plot aggregation",
     )
     parser.add_argument(
         "--model_writeup",
         type=str,
-        default="o1-preview-2024-09-12",
+        default="gpt-5.4",
         help="Model to use for writeup",
     )
     parser.add_argument(
         "--model_citation",
         type=str,
-        default="gpt-4o-2024-11-20",
+        default="gpt-5.4",
         help="Model to use for citation gathering",
     )
     parser.add_argument(
@@ -109,13 +110,13 @@ def parse_arguments():
     parser.add_argument(
         "--model_writeup_small",
         type=str,
-        default="gpt-4o-2024-05-13",
+        default="gpt-5.4",
         help="Smaller model to use for writeup",
     )
     parser.add_argument(
         "--model_review",
         type=str,
-        default="gpt-4o-2024-11-20",
+        default="gpt-5.4",
         help="Model to use for review main text and captions",
     )
     parser.add_argument(
@@ -284,6 +285,12 @@ if __name__ == "__main__":
                     big_model=args.model_writeup,
                     page_limit=8,
                     citations_text=citations_text,
+                )
+            elif args.writeup_type == "survey":
+                writeup_success = perform_survey_writeup(
+                    base_folder=idea_dir,
+                    big_model=args.model_writeup,
+                    small_model=args.model_writeup_small,
                 )
             else:
                 writeup_success = perform_icbinb_writeup(
