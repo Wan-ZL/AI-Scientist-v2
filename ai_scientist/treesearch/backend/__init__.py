@@ -63,8 +63,11 @@ def query(
         model_kwargs["max_completion_tokens"] = 100000  # max_tokens
         # remove 'temperature' from model_kwargs
         model_kwargs.pop("temperature", None)
+    elif "gpt-5" in model:
+        model_kwargs["max_completion_tokens"] = max_tokens or 128000
     else:
-        model_kwargs["max_tokens"] = max_tokens
+        if max_tokens is not None:
+            model_kwargs["max_tokens"] = max_tokens
 
     query_func = backend_anthropic.query if "claude-" in model else backend_openai.query
     output, req_time, in_tok_count, out_tok_count, info = query_func(
