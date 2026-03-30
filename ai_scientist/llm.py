@@ -8,7 +8,16 @@ import anthropic
 import backoff
 import openai
 
-MAX_NUM_TOKENS = 4096
+MAX_NUM_TOKENS = 128000
+
+
+def _gpt_token_param(model):
+    """Return the correct token limit parameter name for a GPT model.
+    Newer models (gpt-5.x, o1, o3) require max_completion_tokens."""
+    if "gpt-5" in model or "o1" in model or "o3" in model:
+        return {"max_completion_tokens": MAX_NUM_TOKENS}
+    return {"max_tokens": MAX_NUM_TOKENS}
+
 
 AVAILABLE_LLMS = [
     "claude-3-5-sonnet-20240620",
@@ -125,7 +134,7 @@ def get_batch_responses_from_llm(
                 *new_msg_history,
             ],
             temperature=temperature,
-            max_tokens=MAX_NUM_TOKENS,
+            **_gpt_token_param(model),
             n=n_responses,
             stop=None,
             seed=0,
@@ -235,7 +244,7 @@ def make_llm_call(client, model, temperature, system_message, prompt):
                 *prompt,
             ],
             temperature=temperature,
-            max_tokens=MAX_NUM_TOKENS,
+            **_gpt_token_param(model),
             n=1,
             stop=None,
             seed=0,

@@ -307,10 +307,19 @@ def perform_survey_writeup(
             print_debug=False,
         )
 
+        # Try to extract LaTeX from response (with or without language tag)
         latex_code_match = re.search(r"```latex(.*?)```", response, re.DOTALL)
         if not latex_code_match:
-            return False
-        updated_latex_code = latex_code_match.group(1).strip()
+            latex_code_match = re.search(r"```(.*?)```", response, re.DOTALL)
+        if not latex_code_match:
+            # If no code block, check if response itself looks like LaTeX
+            if "\\documentclass" in response or "\\begin{document}" in response:
+                updated_latex_code = response.strip()
+            else:
+                print(f"No LaTeX found in response. First 500 chars: {response[:500]}")
+                return False
+        else:
+            updated_latex_code = latex_code_match.group(1).strip()
         with open(writeup_file, "w") as f:
             f.write(updated_latex_code)
 

@@ -356,7 +356,17 @@ def overall_summarize(journals, cfg=None):
                 total=len(list(journals)),
             )
         )
-        draft_summary, baseline_summary, research_summary, ablation_summary = results
+        # Handle variable number of stages (may be 4 or more depending on sub-stages)
+        if len(results) >= 4:
+            draft_summary = results[0]
+            baseline_summary = results[1]
+            research_summary = results[2]
+            ablation_summary = results[3]
+        else:
+            draft_summary = results[0] if len(results) > 0 else None
+            baseline_summary = results[1] if len(results) > 1 else None
+            research_summary = results[2] if len(results) > 2 else None
+            ablation_summary = results[3] if len(results) > 3 else None
 
     return draft_summary, baseline_summary, research_summary, ablation_summary
 
