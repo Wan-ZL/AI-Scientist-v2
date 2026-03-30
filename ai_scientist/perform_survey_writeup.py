@@ -5,10 +5,10 @@ import os.path as osp
 import re
 import shutil
 import traceback
+import unicodedata
 
 from ai_scientist.perform_icbinb_writeup import (
     compile_latex,
-    gather_citations,
     load_idea_text,
     load_exp_summaries,
     filter_experiment_summaries,
@@ -17,15 +17,337 @@ from ai_scientist.perform_icbinb_writeup import (
 )
 from ai_scientist.llm import (
     get_response_from_llm,
+    extract_json_between_markers,
     create_client,
     AVAILABLE_LLMS,
 )
+from ai_scientist.tools.semantic_scholar import search_for_papers
 from ai_scientist.perform_vlm_review import (
     generate_vlm_img_review,
     perform_imgs_cap_ref_review,
     detect_duplicate_figures,
 )
 from ai_scientist.vlm import create_client as create_vlm_client
+
+
+def _remove_accents_and_clean(s):
+    nfkd_form = unicodedata.normalize("NFKD", s)
+    ascii_str = nfkd_form.encode("ASCII", "ignore").decode("ascii")
+    ascii_str = re.sub(r"[^a-zA-Z0-9:_@\{\},-]+", "", ascii_str)
+    ascii_str = ascii_str.lower()
+    return ascii_str
+
+
+# ---------------------------------------------------------------------------
+# Survey-specific citation system message
+# ---------------------------------------------------------------------------
+survey_citation_system_msg = """You are writing a comprehensive survey paper targeting a top-tier academic journal. \
+Your goal is to gather diverse references across ALL topic areas covered by the survey. \
+Aim for 200+ unique references spanning different sub-areas, methods, datasets, and time periods. \
+Do NOT stop early — a survey needs much broader citation coverage than a regular paper.
+
+This phase focuses on collecting references and annotating them to be integrated later.
+Collected citations will be added to a references.bib file.
+
+Reasons to reference papers include:
+1. Summarizing Research: Cite sources when summarizing the existing literature.
+2. Using Specific Concepts: Provide citations when discussing specific theories or concepts.
+3. Datasets, models, and optimizers: Cite the creators of datasets, models, and optimizers.
+4. Comparing Findings: Cite relevant studies when comparing or contrasting different findings.
+5. Highlighting Research Gaps: Cite previous research when pointing out gaps your study addresses.
+6. Using Established Methods: Cite the creators of methodologies you employ.
+7. Supporting Arguments: Cite sources that back up your conclusions and arguments.
+8. Suggesting Future Research: Reference studies related to proposed future research directions.
+
+Ensure sufficient cites will be collected for all of these categories, and no categories are missed.
+You will be given access to the Semantic Scholar API; only add citations that you have found using the API.
+Aim to discuss a broad range of relevant papers, not just the most popular ones.
+Make sure not to copy verbatim from prior literature to avoid plagiarism.
+You will have {total_rounds} rounds to add to the references but do not need to use them all.
+
+DO NOT ADD A CITATION THAT ALREADY EXISTS!"""
+
+_citation_first_prompt_template = """Round {current_round}/{total_rounds}:
+
+You planned and executed the following idea:
+```markdown
+{Idea}
+```
+
+You produced the following report:
+```markdown
+{report}
+```
+
+Your current list of citations is:
+```
+{citations}
+```
+
+Identify the most important citation that you still need to add, and the query to find the paper.
+
+Respond in the following format:
+
+THOUGHT:
+<THOUGHT>
+
+RESPONSE:
+```json
+<JSON>
+```
+
+In <THOUGHT>, first briefly reason and identify which citations are missing.
+If no more citations are needed, add "No more citations needed" to your thoughts.
+Do not add "No more citations needed" if you are adding citations this round.
+
+In <JSON>, respond in JSON format with the following fields:
+- "Description": The purpose of the desired citation and a brief description of what you are looking for.
+- "Query": The search query to find the paper (e.g., attention is all you need).
+This JSON will be automatically parsed, so ensure the format is precise."""
+
+_citation_second_prompt_template = """Search has recovered the following articles:
+
+{papers}
+
+Respond in the following format:
+
+THOUGHT:
+<THOUGHT>
+
+RESPONSE:
+```json
+<JSON>
+```
+
+In <THOUGHT>, briefly reason over the search results and identify which citation(s) best fit your paper.
+If none are appropriate or would contribute significantly to the write-up, add "Do not add any" to your thoughts.
+Do not select papers that are already in the `references.bib` file, or if the same citation exists under a different name.
+
+In <JSON>, respond in JSON format with the following fields:
+- "Selected": A list of integer indices for the selected papers, for example [0, 1]. Do not use quotes for the indices, e.g. "['0', '1']" is invalid.
+- "Description": Update the previous description of the citation(s) with the additional context. This should be a brief description of the work(s), their relevance, and where in a paper these should be cited.
+This JSON will be automatically parsed, so ensure the format is precise."""
+
+
+def _get_survey_citation_addition(
+    client, model, context, current_round, total_rounds, idea_text, result_limit=20
+):
+    report, citations = context
+    msg_history = []
+
+    try:
+        text, msg_history = get_response_from_llm(
+            prompt=_citation_first_prompt_template.format(
+                current_round=current_round + 1,
+                total_rounds=total_rounds,
+                Idea=idea_text,
+                report=report,
+                citations=citations,
+            ),
+            client=client,
+            model=model,
+            system_message=survey_citation_system_msg.format(
+                total_rounds=total_rounds
+            ),
+            msg_history=msg_history,
+            print_debug=False,
+        )
+        if "No more citations needed" in text:
+            print("No more citations needed.")
+            return None, True
+
+        json_output = extract_json_between_markers(text)
+        assert json_output is not None, "Failed to extract JSON from LLM output"
+        query = json_output["Query"]
+        papers = search_for_papers(query, result_limit=result_limit)
+    except Exception:
+        print("EXCEPTION in _get_survey_citation_addition (initial search):")
+        print(traceback.format_exc())
+        return None, False
+
+    if papers is None:
+        print("No papers found.")
+        return None, False
+
+    paper_strings = []
+    for i, paper in enumerate(papers):
+        paper_strings.append(
+            "{i}: {title}. {authors}. {venue}, {year}.\nAbstract: {abstract}".format(
+                i=i,
+                title=paper["title"],
+                authors=paper["authors"],
+                venue=paper["venue"],
+                year=paper["year"],
+                abstract=paper["abstract"],
+            )
+        )
+    papers_str = "\n\n".join(paper_strings)
+
+    try:
+        text, msg_history = get_response_from_llm(
+            prompt=_citation_second_prompt_template.format(
+                papers=papers_str,
+                current_round=current_round + 1,
+                total_rounds=total_rounds,
+            ),
+            client=client,
+            model=model,
+            system_message=survey_citation_system_msg.format(
+                total_rounds=total_rounds
+            ),
+            msg_history=msg_history,
+            print_debug=False,
+        )
+        if "Do not add any" in text:
+            print("Do not add any.")
+            return None, False
+
+        json_output = extract_json_between_markers(text)
+        assert json_output is not None, "Failed to extract JSON from LLM output"
+        desc = json_output["Description"]
+        selected_papers = str(json_output["Selected"])
+
+        if selected_papers != "[]":
+            selected_indices = []
+            for x in selected_papers.strip("[]").split(","):
+                x_str = x.strip().strip('"').strip("'")
+                if x_str:
+                    selected_indices.append(int(x_str))
+            assert all(
+                [0 <= i < len(papers) for i in selected_indices]
+            ), "Invalid paper index"
+            bibtexs = [papers[i]["citationStyles"]["bibtex"] for i in selected_indices]
+
+            cleaned_bibtexs = []
+            for bibtex in bibtexs:
+                newline_index = bibtex.find("\n")
+                cite_key_line = bibtex[:newline_index]
+                cite_key_line = _remove_accents_and_clean(cite_key_line)
+                cleaned_bibtexs.append(cite_key_line + bibtex[newline_index:])
+            bibtexs = cleaned_bibtexs
+
+            bibtex_string = "\n".join(bibtexs)
+        else:
+            return None, False
+
+    except Exception:
+        print("EXCEPTION in _get_survey_citation_addition (selecting papers):")
+        print(traceback.format_exc())
+        return None, False
+
+    references_format = """% {description}
+{bibtex}"""
+
+    references_prompt = references_format.format(bibtex=bibtex_string, description=desc)
+    return references_prompt, False
+
+
+def gather_survey_citations(base_folder, num_cite_rounds=100, small_model="gpt-5.4", result_limit=20):
+    """
+    Survey-specific citation gathering with a broader persona and higher result limits.
+    """
+    citations_cache_path = osp.join(base_folder, "cached_citations.bib")
+    progress_path = osp.join(base_folder, "citations_progress.json")
+
+    # Check for stale / incomplete cache and clear it
+    if osp.exists(progress_path):
+        try:
+            with open(progress_path, "r") as f:
+                progress = json.load(f)
+            if progress.get("status") != "completed":
+                print("Clearing incomplete citation cache, re-gathering...")
+                if osp.exists(citations_cache_path):
+                    os.remove(citations_cache_path)
+                os.remove(progress_path)
+        except Exception:
+            pass
+
+    current_round = 0
+    citations_text = ""
+
+    if osp.exists(citations_cache_path) and osp.exists(progress_path):
+        try:
+            with open(citations_cache_path, "r") as f:
+                citations_text = f.read()
+            with open(progress_path, "r") as f:
+                progress = json.load(f)
+                current_round = progress.get("completed_rounds", 0)
+            print(f"Resuming citation gathering from round {current_round}")
+        except Exception as e:
+            print(f"Error loading cached citations: {e}")
+            print("Starting fresh")
+            current_round = 0
+            citations_text = ""
+
+    try:
+        idea_text = load_idea_text(base_folder)
+        exp_summaries = load_exp_summaries(base_folder)
+        filtered_summaries = filter_experiment_summaries(
+            exp_summaries, step_name="citation_gathering"
+        )
+        filtered_summaries_str = json.dumps(filtered_summaries, indent=2)
+
+        client, client_model = create_client(small_model)
+
+        for round_idx in range(current_round, num_cite_rounds):
+            try:
+                context_for_citation = (filtered_summaries_str, citations_text)
+                addition, done = _get_survey_citation_addition(
+                    client,
+                    client_model,
+                    context_for_citation,
+                    round_idx,
+                    num_cite_rounds,
+                    idea_text,
+                    result_limit=result_limit,
+                )
+
+                if done:
+                    with open(citations_cache_path, "w") as f:
+                        f.write(citations_text)
+                    with open(progress_path, "w") as f:
+                        json.dump(
+                            {"completed_rounds": round_idx + 1, "status": "completed"},
+                            f,
+                        )
+                    break
+
+                if addition is not None:
+                    title_match = re.search(r" title = {(.*?)}", addition)
+                    if title_match:
+                        new_title = title_match.group(1).lower()
+                        existing_titles = re.findall(
+                            r" title = {(.*?)}", citations_text
+                        )
+                        existing_titles = [t.lower() for t in existing_titles]
+                        if new_title not in existing_titles:
+                            citations_text += "\n" + addition
+                            with open(citations_cache_path, "w") as f:
+                                f.write(citations_text)
+                            with open(progress_path, "w") as f:
+                                json.dump(
+                                    {
+                                        "completed_rounds": round_idx + 1,
+                                        "status": "in_progress",
+                                    },
+                                    f,
+                                )
+
+            except Exception as e:
+                print(f"Error in citation round {round_idx}: {e}")
+                print(traceback.format_exc())
+                with open(citations_cache_path, "w") as f:
+                    f.write(citations_text)
+                with open(progress_path, "w") as f:
+                    json.dump({"completed_rounds": round_idx, "status": "error"}, f)
+                continue
+
+        return citations_text if citations_text else None
+
+    except Exception:
+        print("EXCEPTION in gather_survey_citations:")
+        print(traceback.format_exc())
+        return citations_text if citations_text else None
 
 
 # Survey-specific system message for IEEE TPAMI double-column format
@@ -35,7 +357,7 @@ The paper uses IEEE Transactions double-column format and should be {page_limit}
 DO NOT USE MORE THAN {page_limit} PAGES FOR THE MAIN TEXT (before references).
 
 Key requirements:
-- Use \\cite{{}} for all references from references.bib. Cite 200+ papers where appropriate.
+- Use \\cite{{}} for all references from references.bib. Cite extensively — aim for 200+ references. Every section should have at minimum 5 unique citations. When meeting page limits, compress prose paragraphs but NEVER reduce citation density. Never cut citations to save space.
 - Do not change the overall style mandated by IEEE. Keep the current method of including the references.bib file.
 - Do not remove the \\graphicspath directive or no figures will be found.
 - Provide quantitative analysis with comparison tables and statistical charts wherever possible.
@@ -67,7 +389,7 @@ Here are tips for each section of the survey:
   - Use bar charts, line plots, and tables to present statistics.
   - Discuss what the trends reveal about the field's evolution.
 
-- **Per-method sections** (Symbol Detection, Layout Analysis, Text Recognition, Topology, Floor Plans, Engineering Diagrams, Foundation Models, VLM, High-Resolution):
+- **Body sections** (organized by the survey's taxonomy):
   - For each section, provide a structured review of approaches in that area.
   - Include comparison tables with methods, datasets used, and reported metrics.
   - Discuss strengths, limitations, and evolution of approaches.
@@ -81,7 +403,7 @@ Here are tips for each section of the survey:
 - **Open Challenges and Future Directions**:
   - Synthesize unsolved problems from across all reviewed areas.
   - Propose concrete future research directions with justification.
-  - Discuss emerging opportunities (foundation models, multi-modal approaches, etc.).
+  - Discuss emerging opportunities.
 
 - **Conclusion**:
   - Summarize the survey's key findings and contributions.
@@ -140,8 +462,10 @@ Produce the final version of the LaTeX survey manuscript now, ensuring:
 2. All sections from the template are filled with substantive content.
 3. Comparison tables are included for each major method category.
 4. Statistical figures are referenced and discussed.
-5. All available plots are used where appropriate.
+5. Use figures selectively. Figures that illustrate the survey's technical content (method comparisons, performance trends, taxonomy diagrams) should be prioritized. Figures about data-collection methodology should only appear in the Statistical Overview section. Do not exceed 2 figures per section on average. It is acceptable to omit figures that don't add substantive value.
 6. Citations from references.bib are used extensively throughout.
+7. For each method discussed, extract and report specific numerical results (mAP, IoU, F1, accuracy) from the summaries. Build comparison tables with columns: Method | Year | Dataset | Metric | Score. If a value is unavailable, use `--` and note `(not reported)`. Do NOT invent numbers.
+8. Every section must contain at minimum: (a) an opening paragraph explaining scope, (b) a comparison table or taxonomy with at least 3 entries, (c) a synthesis paragraph on trends and open problems. A section with fewer than 300 words is incomplete.
 
 Return the entire file in full, with no unfilled placeholders!
 This must be an acceptable complete LaTeX writeup for a TPAMI survey.
@@ -154,11 +478,6 @@ with "latex" syntax highlighting, like so:
 <UPDATED LATEX CODE>
 ```
 """
-
-# Survey-specific citation system message (used implicitly via gather_citations)
-# The gather_citations function uses its own citation prompts from perform_icbinb_writeup.
-# For survey mode, we rely on the higher num_cite_rounds to collect more references.
-
 
 def perform_survey_writeup(
     base_folder,
@@ -226,6 +545,21 @@ def perform_survey_writeup(
         # If no citations provided, try to load from cache first
         if citations_text is None:
             citations_cache_path = osp.join(base_folder, "cached_citations.bib")
+            progress_path = osp.join(base_folder, "citations_progress.json")
+
+            # Check for stale / incomplete cache and clear it
+            if osp.exists(progress_path):
+                try:
+                    with open(progress_path, "r") as f:
+                        progress = json.load(f)
+                    if progress.get("status") != "completed":
+                        print("Clearing incomplete citation cache, re-gathering...")
+                        if osp.exists(citations_cache_path):
+                            os.remove(citations_cache_path)
+                        os.remove(progress_path)
+                except Exception:
+                    pass
+
             if osp.exists(citations_cache_path):
                 try:
                     with open(citations_cache_path, "r") as f:
@@ -235,10 +569,11 @@ def perform_survey_writeup(
                     print(f"Error loading cached citations: {e}")
                     citations_text = None
 
-            # If still no citations, gather them (with higher rounds for surveys)
+            # If still no citations, gather them with survey-specific persona
             if not citations_text:
-                citations_text = gather_citations(
-                    base_folder, num_cite_rounds, small_model
+                num_cite_rounds = max(num_cite_rounds, 100)
+                citations_text = gather_survey_citations(
+                    base_folder, num_cite_rounds, small_model, result_limit=20
                 )
                 if citations_text is None:
                     print("Warning: Citation gathering failed")
@@ -378,7 +713,7 @@ Now let's reflect and identify any issues (including but not limited to):
 3) Have we included all relevant details from the summaries without hallucinating?
 4) Are comparison tables comprehensive with proper formatting for the double-column layout?
 5) Are statistical trends and patterns discussed with quantitative evidence?
-6) The following figures are available in the folder but not used in the LaTeX: {sorted(unused_figs)}
+6) For unused figures, decide if they add substantive value to a specific section. If not, it is acceptable to omit them. Unused figures: {sorted(unused_figs)}
 7) The following figure references in the LaTeX do not match any actual file: {sorted(invalid_figs)}
 {reflection_page_info}
 chktex results:
@@ -394,6 +729,8 @@ VLM reviews:
 ```
 {analysis_duplicate_figs}
 ```
+10) Identify any section with fewer than 5 unique \\cite{{}} references. Those sections need more citations.
+11) Identify any section with fewer than 200 words. Those sections need expansion.
 
 Please provide a revised complete LaTeX in triple backticks, or repeat the same if no changes are needed.
 Return the entire file in full, with no unfilled placeholders!

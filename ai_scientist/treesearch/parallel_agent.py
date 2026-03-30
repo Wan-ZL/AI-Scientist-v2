@@ -313,6 +313,12 @@ class MinimalAgent:
             "DATA INPUT GUIDELINES:",
             "  - Load data from appropriate sources (APIs, datasets, files, or generate synthetic data as needed)",
             "  - Always pay extra attention to data preprocessing and normalization where applicable",
+            "EXTERNAL DATA REQUIREMENTS:",
+            "  - You CAN and SHOULD call external APIs using the `requests` library when the task requires real-world data.",
+            "  - Common APIs: Semantic Scholar (https://api.semanticscholar.org/graph/v1/paper/search), arXiv, HuggingFace datasets API.",
+            "  - Use time.sleep(1) between API calls to respect rate limits.",
+            "  - Do NOT generate synthetic or fake data when real data is available via APIs.",
+            "  - Do NOT simulate results that should come from real measurements or real literature.",
         ]
         if hasattr(self.cfg.experiment, "num_syn_datasets"):
             num_syn_datasets = self.cfg.experiment.num_syn_datasets
