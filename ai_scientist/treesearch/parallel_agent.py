@@ -2179,7 +2179,7 @@ class ParallelAgent:
                 import traceback
 
                 traceback.print_exc()
-                raise
+                continue  # Skip this node and continue with remaining futures
             finally:
                 # Release GPU for this process if it was using one
                 process_id = f"worker_{i}"
