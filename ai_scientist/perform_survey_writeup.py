@@ -205,14 +205,9 @@ def _get_survey_citation_addition(
         json_output = extract_json_between_markers(text)
         assert json_output is not None, "Failed to extract JSON from LLM output"
         desc = json_output["Description"]
-        selected_papers = str(json_output["Selected"])
-
-        if selected_papers != "[]":
-            selected_indices = []
-            for x in selected_papers.strip("[]").split(","):
-                x_str = x.strip().strip('"').strip("'")
-                if x_str:
-                    selected_indices.append(int(x_str))
+        selected_indices = json_output.get("Selected", [])
+        if isinstance(selected_indices, list) and selected_indices:
+            selected_indices = [int(i) for i in selected_indices]
             assert all(
                 [0 <= i < len(papers) for i in selected_indices]
             ), "Invalid paper index"
@@ -220,10 +215,13 @@ def _get_survey_citation_addition(
 
             cleaned_bibtexs = []
             for bibtex in bibtexs:
-                newline_index = bibtex.find("\n")
-                cite_key_line = bibtex[:newline_index]
-                cite_key_line = _remove_accents_and_clean(cite_key_line)
-                cleaned_bibtexs.append(cite_key_line + bibtex[newline_index:])
+                if "\n" in bibtex:
+                    newline_index = bibtex.find("\n")
+                    cite_key_line = bibtex[:newline_index]
+                    cite_key_line = _remove_accents_and_clean(cite_key_line)
+                    cleaned_bibtexs.append(cite_key_line + bibtex[newline_index:])
+                else:
+                    cleaned_bibtexs.append(_remove_accents_and_clean(bibtex))
             bibtexs = cleaned_bibtexs
 
             bibtex_string = "\n".join(bibtexs)
@@ -313,11 +311,11 @@ def gather_survey_citations(base_folder, num_cite_rounds=100, small_model="gpt-5
                     break
 
                 if addition is not None:
-                    title_match = re.search(r" title = {(.*?)}", addition)
+                    title_match = re.search(r"title\s*=\s*[\{\"](.*?)[\}\"]", addition, re.IGNORECASE)
                     if title_match:
                         new_title = title_match.group(1).lower()
                         existing_titles = re.findall(
-                            r" title = {(.*?)}", citations_text
+                            r"title\s*=\s*[\{\"](.*?)[\}\"]", citations_text, re.IGNORECASE
                         )
                         existing_titles = [t.lower() for t in existing_titles]
                         if new_title not in existing_titles:
@@ -624,94 +622,96 @@ def perform_survey_writeup(
         # Survey writeup needs larger output tokens than the safe default (16384)
         # GPT-5.x supports up to 128000 via max_completion_tokens
         import ai_scientist.llm as llm_module
+        original_max_tokens = llm_module.MAX_NUM_TOKENS
         if "gpt-5" in big_model:
             llm_module.MAX_NUM_TOKENS = 128000
-        big_client, big_client_model = create_client(big_model)
-        with open(writeup_file, "r", encoding="utf-8", errors="replace") as f:
-            writeup_text = f.read()
-
-        combined_prompt = writeup_prompt.format(
-            idea_text=idea_text,
-            summaries=combined_summaries_str,
-            aggregator_code=aggregator_code,
-            plot_list=", ".join(plot_names),
-            latex_writeup=writeup_text,
-            plot_descriptions=plot_descriptions_str,
-        )
-
-        response, msg_history = get_response_from_llm(
-            prompt=combined_prompt,
-            client=big_client,
-            model=big_client_model,
-            system_message=big_model_system_message,
-            print_debug=False,
-        )
-
-        # Try to extract LaTeX from response (with or without language tag)
-        latex_code_match = re.search(r"```latex(.*?)```", response, re.DOTALL)
-        if not latex_code_match:
-            latex_code_match = re.search(r"```(.*?)```", response, re.DOTALL)
-        if not latex_code_match:
-            # If no code block, check if response itself looks like LaTeX
-            if "\\documentclass" in response or "\\begin{document}" in response:
-                updated_latex_code = response.strip()
-            else:
-                print(f"No LaTeX found in response. First 500 chars: {response[:500]}")
-                return False
-        else:
-            updated_latex_code = latex_code_match.group(1).strip()
-        with open(writeup_file, "w") as f:
-            f.write(updated_latex_code)
-
-        # Multiple reflection loops (more passes for longer survey papers)
-        for i in range(n_writeup_reflections):
+        try:
+            big_client, big_client_model = create_client(big_model)
             with open(writeup_file, "r", encoding="utf-8", errors="replace") as f:
-                current_latex = f.read()
+                writeup_text = f.read()
 
-            # Check for unused or invalid figure references
-            referenced_figs_temp = re.findall(
-                r"\\includegraphics(?:\[[^\]]*\])?{([^}]+)}", current_latex
+            combined_prompt = writeup_prompt.format(
+                idea_text=idea_text,
+                summaries=combined_summaries_str,
+                aggregator_code=aggregator_code,
+                plot_list=", ".join(plot_names),
+                latex_writeup=writeup_text,
+                plot_descriptions=plot_descriptions_str,
             )
-            used_figs = set(os.path.basename(fig) for fig in referenced_figs_temp)
-            all_figs = set(plot_names)
-            unused_figs = all_figs - used_figs
-            invalid_figs = used_figs - all_figs
 
-            # Save PDF with reflection trial number
-            reflection_pdf = osp.join(
-                base_folder, f"{osp.basename(base_folder)}_reflection{i+1}.pdf"
+            response, msg_history = get_response_from_llm(
+                prompt=combined_prompt,
+                client=big_client,
+                model=big_client_model,
+                system_message=big_model_system_message,
+                print_debug=False,
             )
-            print(f"Compiling PDF for reflection {i+1}...")
-            compile_latex(latex_folder, reflection_pdf)
 
-            # VLM review of figures
-            try:
-                review_img_cap_ref = perform_imgs_cap_ref_review(
-                    vlm_client, vlm_model, reflection_pdf
+            # Try to extract LaTeX from response (with or without language tag)
+            latex_code_match = re.search(r"```latex(.*?)```", response, re.DOTALL)
+            if not latex_code_match:
+                latex_code_match = re.search(r"```(.*?)```", response, re.DOTALL)
+            if not latex_code_match:
+                # If no code block, check if response itself looks like LaTeX
+                if "\\documentclass" in response or "\\begin{document}" in response:
+                    updated_latex_code = response.strip()
+                else:
+                    print(f"No LaTeX found in response. First 500 chars: {response[:500]}")
+                    return False
+            else:
+                updated_latex_code = latex_code_match.group(1).strip()
+            with open(writeup_file, "w") as f:
+                f.write(updated_latex_code)
+
+            # Multiple reflection loops (more passes for longer survey papers)
+            for i in range(n_writeup_reflections):
+                with open(writeup_file, "r", encoding="utf-8", errors="replace") as f:
+                    current_latex = f.read()
+
+                # Check for unused or invalid figure references
+                referenced_figs_temp = re.findall(
+                    r"\\includegraphics(?:\[[^\]]*\])?{([^}]+)}", current_latex
                 )
-            except Exception:
-                print("EXCEPTION in VLM image review:")
-                print(traceback.format_exc())
-                review_img_cap_ref = "No VLM review available."
+                used_figs = set(os.path.basename(fig) for fig in referenced_figs_temp)
+                all_figs = set(plot_names)
+                unused_figs = all_figs - used_figs
+                invalid_figs = used_figs - all_figs
 
-            # Detect duplicate figures
-            try:
-                analysis_duplicate_figs = detect_duplicate_figures(
-                    vlm_client, vlm_model, reflection_pdf
+                # Save PDF with reflection trial number
+                reflection_pdf = osp.join(
+                    base_folder, f"{osp.basename(base_folder)}_reflection{i+1}.pdf"
                 )
-            except Exception:
-                print("EXCEPTION in duplicate figure detection:")
-                print(traceback.format_exc())
-                analysis_duplicate_figs = "No duplicate analysis available."
+                print(f"Compiling PDF for reflection {i+1}...")
+                compile_latex(latex_folder, reflection_pdf)
 
-            # Get reflection_page_info
-            reflection_page_info = get_reflection_page_info(reflection_pdf, page_limit)
+                # VLM review of figures
+                try:
+                    review_img_cap_ref = perform_imgs_cap_ref_review(
+                        vlm_client, vlm_model, reflection_pdf
+                    )
+                except Exception:
+                    print("EXCEPTION in VLM image review:")
+                    print(traceback.format_exc())
+                    review_img_cap_ref = "No VLM review available."
 
-            check_output = os.popen(
-                f"chktex {writeup_file} -q -n2 -n24 -n13 -n1"
-            ).read()
+                # Detect duplicate figures
+                try:
+                    analysis_duplicate_figs = detect_duplicate_figures(
+                        vlm_client, vlm_model, reflection_pdf
+                    )
+                except Exception:
+                    print("EXCEPTION in duplicate figure detection:")
+                    print(traceback.format_exc())
+                    analysis_duplicate_figs = "No duplicate analysis available."
 
-            reflection_prompt = f"""
+                # Get reflection_page_info
+                reflection_page_info = get_reflection_page_info(reflection_pdf, page_limit)
+
+                check_output = os.popen(
+                    f"chktex {writeup_file} -q -n2 -n24 -n13 -n1"
+                ).read()
+
+                reflection_prompt = f"""
 Now let's reflect and identify any issues (including but not limited to):
 1) Are there any LaTeX syntax errors or style violations we can fix? Refer to the chktex output below.
 2) Is the writing clear, well-organized, and does it provide insightful analysis (not just listing papers)?
@@ -749,8 +749,55 @@ Ensure proper citation usage:
 If you believe you are done with reflection, simply say: "I am done".
 """
 
+                reflection_response, msg_history = get_response_from_llm(
+                    prompt=reflection_prompt,
+                    client=big_client,
+                    model=big_client_model,
+                    system_message=big_model_system_message,
+                    msg_history=msg_history[-1:],
+                    print_debug=False,
+                )
+
+                if "I am done" in reflection_response:
+                    print(
+                        "LLM indicated it is done with reflections. Exiting reflection loop."
+                    )
+                    break
+
+                reflection_code_match = re.search(
+                    r"```latex(.*?)```", reflection_response, re.DOTALL
+                )
+                if reflection_code_match:
+                    reflected_latex_code = reflection_code_match.group(1).strip()
+                    if reflected_latex_code != current_latex:
+                        final_text = reflected_latex_code
+                        cleanup_map = {
+                            "</end": r"\\end",
+                            "</begin": r"\\begin",
+                            "\u2019": "'",
+                        }
+                        for bad_str, repl_str in cleanup_map.items():
+                            final_text = final_text.replace(bad_str, repl_str)
+                        final_text = re.sub(r"(\d+(?:\.\d+)?)%", r"\1\\%", final_text)
+
+                        with open(writeup_file, "w") as fo:
+                            fo.write(final_text)
+
+                        compile_latex(latex_folder, reflection_pdf)
+                    else:
+                        print(f"No changes in reflection step {i+1}.")
+                        break
+                else:
+                    print(f"No valid LaTeX code block found in reflection step {i+1}.")
+                    break
+
+            # Final reflection on page limit
+            reflection_page_info = get_reflection_page_info(reflection_pdf, page_limit)
+
+            final_reflection_prompt = """{reflection_page_info}
+USE MINIMAL EDITS TO OPTIMIZE THE PAGE LIMIT USAGE."""
             reflection_response, msg_history = get_response_from_llm(
-                prompt=reflection_prompt,
+                prompt=final_reflection_prompt,
                 client=big_client,
                 model=big_client_model,
                 system_message=big_model_system_message,
@@ -758,17 +805,18 @@ If you believe you are done with reflection, simply say: "I am done".
                 print_debug=False,
             )
 
-            if "I am done" in reflection_response:
-                print(
-                    "LLM indicated it is done with reflections. Exiting reflection loop."
-                )
-                break
+            reflection_pdf = osp.join(
+                base_folder, f"{osp.basename(base_folder)}_reflection_final_page_limit.pdf"
+            )
+            print("Compiling PDF for reflection final page limit...")
 
             reflection_code_match = re.search(
                 r"```latex(.*?)```", reflection_response, re.DOTALL
             )
             if reflection_code_match:
                 reflected_latex_code = reflection_code_match.group(1).strip()
+                with open(writeup_file, "r", encoding="utf-8", errors="replace") as f:
+                    current_latex = f.read()
                 if reflected_latex_code != current_latex:
                     final_text = reflected_latex_code
                     cleanup_map = {
@@ -785,57 +833,11 @@ If you believe you are done with reflection, simply say: "I am done".
 
                     compile_latex(latex_folder, reflection_pdf)
                 else:
-                    print(f"No changes in reflection step {i+1}.")
-                    break
-            else:
-                print(f"No valid LaTeX code block found in reflection step {i+1}.")
-                break
+                    print("No changes in reflection page step.")
 
-        # Final reflection on page limit
-        reflection_page_info = get_reflection_page_info(reflection_pdf, page_limit)
-
-        final_reflection_prompt = """{reflection_page_info}
-USE MINIMAL EDITS TO OPTIMIZE THE PAGE LIMIT USAGE."""
-        reflection_response, msg_history = get_response_from_llm(
-            prompt=final_reflection_prompt,
-            client=big_client,
-            model=big_client_model,
-            system_message=big_model_system_message,
-            msg_history=msg_history[-1:],
-            print_debug=False,
-        )
-
-        reflection_pdf = osp.join(
-            base_folder, f"{osp.basename(base_folder)}_reflection_final_page_limit.pdf"
-        )
-        print("Compiling PDF for reflection final page limit...")
-
-        reflection_code_match = re.search(
-            r"```latex(.*?)```", reflection_response, re.DOTALL
-        )
-        if reflection_code_match:
-            reflected_latex_code = reflection_code_match.group(1).strip()
-            with open(writeup_file, "r", encoding="utf-8", errors="replace") as f:
-                current_latex = f.read()
-            if reflected_latex_code != current_latex:
-                final_text = reflected_latex_code
-                cleanup_map = {
-                    "</end": r"\\end",
-                    "</begin": r"\\begin",
-                    "\u2019": "'",
-                }
-                for bad_str, repl_str in cleanup_map.items():
-                    final_text = final_text.replace(bad_str, repl_str)
-                final_text = re.sub(r"(\d+(?:\.\d+)?)%", r"\1\\%", final_text)
-
-                with open(writeup_file, "w") as fo:
-                    fo.write(final_text)
-
-                compile_latex(latex_folder, reflection_pdf)
-            else:
-                print("No changes in reflection page step.")
-
-        return osp.exists(reflection_pdf)
+            return osp.exists(reflection_pdf)
+        finally:
+            llm_module.MAX_NUM_TOKENS = original_max_tokens
 
     except Exception:
         print("EXCEPTION in perform_survey_writeup:")
