@@ -8,15 +8,17 @@ import anthropic
 import backoff
 import openai
 
-MAX_NUM_TOKENS = 128000
+MAX_NUM_TOKENS = 16384  # Safe default for all models (gpt-4o limit)
 
 
-def _gpt_token_param(model):
-    """Return the correct token limit parameter name for a GPT model.
-    Newer models (gpt-5.x, o1, o3) require max_completion_tokens."""
+def _gpt_token_param(model, max_tokens=None):
+    """Return the correct token limit parameter for a GPT model.
+    GPT-5.x supports up to 128000 via max_completion_tokens.
+    Older models (gpt-4o etc.) use max_tokens with 16384 limit."""
+    tokens = max_tokens or MAX_NUM_TOKENS
     if "gpt-5" in model or "o1" in model or "o3" in model:
-        return {"max_completion_tokens": MAX_NUM_TOKENS}
-    return {"max_tokens": MAX_NUM_TOKENS}
+        return {"max_completion_tokens": tokens}
+    return {"max_tokens": tokens}
 
 
 AVAILABLE_LLMS = [

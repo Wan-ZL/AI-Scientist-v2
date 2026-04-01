@@ -8,7 +8,7 @@ import os
 from PIL import Image
 from ai_scientist.utils.token_tracker import track_token_usage
 
-MAX_NUM_TOKENS = 128000
+MAX_NUM_TOKENS = 16384  # Safe default for all models (gpt-4o limit)
 
 AVAILABLE_VLMS = [
     "gpt-4o-2024-05-13",

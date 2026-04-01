@@ -621,6 +621,11 @@ def perform_survey_writeup(
         big_model_system_message = writeup_system_message_template.format(
             page_limit=page_limit
         )
+        # Survey writeup needs larger output tokens than the safe default (16384)
+        # GPT-5.x supports up to 128000 via max_completion_tokens
+        import ai_scientist.llm as llm_module
+        if "gpt-5" in big_model:
+            llm_module.MAX_NUM_TOKENS = 128000
         big_client, big_client_model = create_client(big_model)
         with open(writeup_file, "r") as f:
             writeup_text = f.read()
