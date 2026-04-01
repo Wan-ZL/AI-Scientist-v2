@@ -518,7 +518,7 @@ def perform_survey_writeup(
             )
 
         writeup_file = osp.join(latex_folder, "template.tex")
-        with open(writeup_file, "r") as f:
+        with open(writeup_file, "r", encoding="utf-8", errors="replace") as f:
             writeup_text = f.read()
 
         # Gather plot filenames from figures/ folder
@@ -581,7 +581,7 @@ def perform_survey_writeup(
 
         # Insert citations into template.tex
         if citations_text:
-            with open(writeup_file, "r") as f:
+            with open(writeup_file, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
             pattern_end = r"\end{filecontents}"
             content = content.replace(pattern_end, f"\n{citations_text}{pattern_end}")
@@ -627,7 +627,7 @@ def perform_survey_writeup(
         if "gpt-5" in big_model:
             llm_module.MAX_NUM_TOKENS = 128000
         big_client, big_client_model = create_client(big_model)
-        with open(writeup_file, "r") as f:
+        with open(writeup_file, "r", encoding="utf-8", errors="replace") as f:
             writeup_text = f.read()
 
         combined_prompt = writeup_prompt.format(
@@ -665,7 +665,7 @@ def perform_survey_writeup(
 
         # Multiple reflection loops (more passes for longer survey papers)
         for i in range(n_writeup_reflections):
-            with open(writeup_file, "r") as f:
+            with open(writeup_file, "r", encoding="utf-8", errors="replace") as f:
                 current_latex = f.read()
 
             # Check for unused or invalid figure references
@@ -815,7 +815,7 @@ USE MINIMAL EDITS TO OPTIMIZE THE PAGE LIMIT USAGE."""
         )
         if reflection_code_match:
             reflected_latex_code = reflection_code_match.group(1).strip()
-            with open(writeup_file, "r") as f:
+            with open(writeup_file, "r", encoding="utf-8", errors="replace") as f:
                 current_latex = f.read()
             if reflected_latex_code != current_latex:
                 final_text = reflected_latex_code
