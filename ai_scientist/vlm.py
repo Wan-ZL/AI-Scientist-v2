@@ -8,13 +8,14 @@ import os
 from PIL import Image
 from ai_scientist.utils.token_tracker import track_token_usage
 
-MAX_NUM_TOKENS = 4096
+MAX_NUM_TOKENS = 16384  # Safe default for all models (gpt-4o limit)
 
 AVAILABLE_VLMS = [
     "gpt-4o-2024-05-13",
     "gpt-4o-2024-08-06",
     "gpt-4o-2024-11-20",
     "gpt-4o-mini-2024-07-18",
+    "gpt-5.4",
     "o3-mini",
 
     # Ollama models
@@ -65,6 +66,7 @@ def make_llm_call(client, model, temperature, system_message, prompt):
             seed=0,
         )
     elif "gpt" in model:
+        token_param = {"max_completion_tokens": MAX_NUM_TOKENS} if "gpt-5" in model else {"max_tokens": MAX_NUM_TOKENS}
         return client.chat.completions.create(
             model=model,
             messages=[
@@ -72,7 +74,7 @@ def make_llm_call(client, model, temperature, system_message, prompt):
                 *prompt,
             ],
             temperature=temperature,
-            max_tokens=MAX_NUM_TOKENS,
+            **token_param,
             n=1,
             stop=None,
             seed=0,
@@ -105,6 +107,7 @@ def make_vlm_call(client, model, temperature, system_message, prompt):
             max_tokens=MAX_NUM_TOKENS,
         )
     elif "gpt" in model:
+        token_param = {"max_completion_tokens": MAX_NUM_TOKENS} if "gpt-5" in model else {"max_tokens": MAX_NUM_TOKENS}
         return client.chat.completions.create(
             model=model,
             messages=[
@@ -112,7 +115,7 @@ def make_vlm_call(client, model, temperature, system_message, prompt):
                 *prompt,
             ],
             temperature=temperature,
-            max_tokens=MAX_NUM_TOKENS,
+            **token_param,
         )
     else:
         raise ValueError(f"Model {model} not supported.")
@@ -199,6 +202,7 @@ def create_client(model: str) -> tuple[Any, str]:
         "gpt-4o-2024-08-06",
         "gpt-4o-2024-11-20",
         "gpt-4o-mini-2024-07-18",
+        "gpt-5.4",
         "o3-mini",
     ]:
         print(f"Using OpenAI API with model {model}.")
@@ -315,6 +319,7 @@ def get_batch_responses_from_vlm(
             )
         else:
             # Get multiple responses
+            token_param = {"max_completion_tokens": MAX_NUM_TOKENS} if "gpt-5" in model else {"max_tokens": MAX_NUM_TOKENS}
             response = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -322,7 +327,7 @@ def get_batch_responses_from_vlm(
                     *new_msg_history,
                 ],
                 temperature=temperature,
-                max_tokens=MAX_NUM_TOKENS,
+                **token_param,
                 n=n_responses,
                 seed=0,
             )

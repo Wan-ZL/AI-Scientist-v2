@@ -8,7 +8,18 @@ import anthropic
 import backoff
 import openai
 
-MAX_NUM_TOKENS = 4096
+MAX_NUM_TOKENS = 16384  # Safe default for all models (gpt-4o limit)
+
+
+def _gpt_token_param(model, max_tokens=None):
+    """Return the correct token limit parameter for a GPT model.
+    GPT-5.x supports up to 128000 via max_completion_tokens.
+    Older models (gpt-4o etc.) use max_tokens with 16384 limit."""
+    tokens = max_tokens or MAX_NUM_TOKENS
+    if "gpt-5" in model or "o1" in model or "o3" in model:
+        return {"max_completion_tokens": tokens}
+    return {"max_tokens": tokens}
+
 
 AVAILABLE_LLMS = [
     "claude-3-5-sonnet-20240620",
@@ -125,7 +136,7 @@ def get_batch_responses_from_llm(
                 *new_msg_history,
             ],
             temperature=temperature,
-            max_tokens=MAX_NUM_TOKENS,
+            **_gpt_token_param(model),
             n=n_responses,
             stop=None,
             seed=0,
@@ -235,7 +246,7 @@ def make_llm_call(client, model, temperature, system_message, prompt):
                 *prompt,
             ],
             temperature=temperature,
-            max_tokens=MAX_NUM_TOKENS,
+            **_gpt_token_param(model),
             n=1,
             stop=None,
             seed=0,
