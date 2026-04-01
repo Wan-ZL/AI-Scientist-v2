@@ -8,7 +8,7 @@ import anthropic
 import backoff
 import openai
 
-MAX_NUM_TOKENS = 128000
+MAX_NUM_TOKENS = 16384
 
 
 def _gpt_token_param(model):

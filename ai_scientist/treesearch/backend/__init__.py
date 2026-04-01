@@ -64,7 +64,7 @@ def query(
         # remove 'temperature' from model_kwargs
         model_kwargs.pop("temperature", None)
     elif "gpt-5" in model:
-        model_kwargs["max_completion_tokens"] = max_tokens or 128000
+        model_kwargs["max_completion_tokens"] = max_tokens or 16384
     else:
         if max_tokens is not None:
             model_kwargs["max_tokens"] = max_tokens
